@@ -1,0 +1,668 @@
+<!DOCTYPE html>
+<html lang="zh">
+<head>
+    <meta charset="UTF-8">
+    <title>Gomoku AlphaZero - 竞技场</title>
+    <script src="https://cdn.jsdelivr.net/npm/chart.js"></script>
+    <style>
+        :root { --board-bg: #d2b48c; --primary-blue: #007bff; --light-gray: #f8f9fa; --border-color: #e0e0e0; --text-color: #333; --error-bg: #f8d7da; --error-text: #721c24; --success-color: #28a745; --fail-color: #dc3545;}
+        body { font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, "Helvetica Neue", Arial, sans-serif; display: flex; justify-content: center; align-items: flex-start; margin: 0; padding: 20px; background-color: #f0f2f5; }
+        #connection-error-banner { display: none; position: fixed; top: 0; left: 0; width: 100%; background-color: var(--error-bg); color: var(--error-text); text-align: center; padding: 10px; font-weight: bold; z-index: 1000; border-bottom: 1px solid #f5c6cb; }
+        .container { display: flex; gap: 20px; max-width: 1200px; width: 100%; align-items: flex-start; margin-top: 50px; }
+        .panel { background: white; padding: 25px; border-radius: 12px; box-shadow: 0 6px 20px rgba(0,0,0,0.08); flex-shrink: 0; }
+        .board-container { position: relative; background-color: var(--board-bg); border: 2px solid #333; }
+        #gomoku-board.playable { cursor: pointer; }
+        .controls-panel { display: flex; flex-direction: column; gap: 15px; width: 380px; }
+        .control-group { border: 1px solid var(--border-color); padding: 15px; border-radius: 8px; }
+        h2, h3 { margin-top: 0; color: var(--text-color); border-bottom: 1px solid #eee; padding-bottom: 10px; font-weight: 600; }
+        button, select { padding: 10px 15px; border-radius: 6px; border: 1px solid #ccc; background-color: #fff; font-size: 16px; cursor: pointer; transition: all 0.2s ease; color: var(--text-color); width: 100%; box-sizing: border-box; }
+        button:hover:not(:disabled) { background-color: #f1f3f5; border-color: #999; }
+        button:active:not(:disabled) { transform: translateY(1px); background-color: #e9ecef; }
+        button:disabled { background-color: #e9ecef; color: #adb5bd; cursor: not-allowed; opacity: 0.7; }
+        .mode-selector .player-controls button.active { background-color: var(--primary-blue); color: white; border-color: var(--primary-blue); font-weight: bold; }
+        .player-controls { display: flex; gap: 10px; }
+        .player-controls button { flex: 1; }
+        #info-panel, #status-panel { padding: 12px; background-color: var(--light-gray); border: 1px solid var(--border-color); border-radius: 8px; text-align: left; font-weight: 500; min-height: 44px; display: flex; flex-direction: column; justify-content: center; align-items: flex-start; line-height: 1.5; }
+        #win-rate-chart-container { margin-top: 15px; height: 180px; }
+        .setup-controls, .replay-controls-wrapper { display: flex; flex-direction: column; gap: 10px; }
+        #replay-controls .player-controls button { padding: 10px 8px; }
+        .stat-line { padding-left: 15px; font-size: 14px; color: #555;}
+    </style>
+</head>
+<body>
+<div id="connection-error-banner"></div>
+<div class="container">
+    <div class="panel board-panel"><h2 id="board-title">Replay Mode</h2><div id="board-sizer" class="board-container"><canvas id="gomoku-board"></canvas></div></div>
+    <div class="panel controls-panel">
+        <div class="control-group mode-selector"><h3 >Mode</h3>
+            <div class="player-controls">
+                <button id="btn-play-mode">Play</button>
+                <button id="btn-live-mode">Live</button>
+                <button id="btn-replay-mode" class="active">Replay</button>
+                <button id="btn-test-mode">MCTS</button>
+            </div>
+        </div>
+        
+        <div id="replay-controls" class="control-group"><h3 >Replay Controls</h3><div class="replay-controls-wrapper"><select id="replay-selector"></select><div class="player-controls"><button id="btn-first">⏮️</button><button id="btn-prev">⏪</button><button id="btn-play-pause">▶️</button><button id="btn-next">⏩</button><button id="btn-last">⏭️</button></div><div><label for="speed-slider" style="font-size: 14px; color: #555;">Speed:</label><input type="range" id="speed-slider" min="100" max="1500" value="700" step="50" style="width: 100%;"></div></div></div>
+        
+        <div id="info-panel">Loading...</div>
+
+        <div id="main-controls" class="control-group" style="display: none;">
+            <h3 id="main-controls-title"></h3>
+            <div id="live-setup-controls" class="setup-controls">
+                <div><label for="live-black-model-selector" id="live-black-model-label">⚫ Black Model:</label><select id="live-black-model-selector"></select></div>
+                <div><label for="live-white-model-selector" id="live-white-model-label">⚪ White Model:</label><select id="live-white-model-selector"></select></div>
+                <button id="btn-live-start-stop" style="margin-top: 10px;">Start Battle</button>
+            </div>
+            <div id="play-setup-controls" class="setup-controls">
+                 <div><label for="play-model-selector">Select AI Model:</label><select id="play-model-selector"></select></div>
+                <div class="player-controls"><button id="btn-play-black">Play as ⚫</button><button id="btn-play-white">Play as ⚪</button></div>
+            </div>
+            <div id="test-setup-controls" class="setup-controls">
+                <div><label for="test-model-selector">Select Model to Test:</label><select id="test-model-selector"></select></div>
+                <div class="player-controls"><button id="btn-test-win">Test: Win in 1</button><button id="btn-test-block">Test: Block in 1</button></div>
+                <button id="btn-policy-test" style="margin-top: 5px;">Show Raw Policy</button> 
+                <button id="btn-dynamics-test" style="margin-top: 5px;">Test Dynamics</button>
+            </div>
+            <button id="btn-reset" style="margin-top: 10px; display: none;">Reset</button>
+            <div id="win-rate-chart-container" style="display: none;"><canvas id="win-rate-chart"></canvas></div>
+        </div>
+        <div id="status-panel" style="display: none;"></div>
+    </div>
+</div>
+
+<script>
+let BOARD_SIZE = 15, N_IN_ROW = 5, CELL_SIZE = 35, MARGIN = 35, CANVAS_DIMENSION;
+const canvas = document.getElementById('gomoku-board'), ctx = canvas.getContext('2d'), boardSizer = document.getElementById('board-sizer');
+let currentMode = 'replay', replayData = null, currentReplayStep = 0, isAutoPlaying = false, autoPlayInterval = null, autoPlaySpeed = 800;
+let board = [], moveHistory = [], playerColor = null, isPlayerTurn = false, isGameOver = false, isLiveGameRunning = false;
+const infoPanel = document.getElementById('info-panel'), statusPanel = document.getElementById('status-panel'), replaySelector = document.getElementById('replay-selector');
+let winRateChart = null, blackWinRateHistory = [];
+let missedWinAnalysis = null;
+
+function drawGrid() {
+    ctx.clearRect(0, 0, canvas.width, canvas.height); ctx.strokeStyle = '#000'; ctx.lineWidth = 1;
+    for (let i = 0; i < BOARD_SIZE; i++) {
+        const p = MARGIN + i * CELL_SIZE;
+        ctx.beginPath(); ctx.moveTo(p, MARGIN); ctx.lineTo(p, MARGIN + (BOARD_SIZE - 1) * CELL_SIZE); ctx.stroke();
+        ctx.beginPath(); ctx.moveTo(MARGIN, p); ctx.lineTo(MARGIN + (BOARD_SIZE - 1) * CELL_SIZE, p); ctx.stroke();
+    }
+}
+function drawStone(row, col, color, {moveNumber = null, alpha = 1.0, isCorrect = null} = {}) {
+    const x = MARGIN + col * CELL_SIZE;
+    const y = MARGIN + row * CELL_SIZE;
+    ctx.save();
+    ctx.globalAlpha = alpha;
+    
+    const stoneChar = color === 1 ? '⚫' : '⚪';
+    ctx.font = `${CELL_SIZE * 0.9}px Arial`;
+    ctx.textAlign = 'center';
+    ctx.textBaseline = 'middle';
+    ctx.fillText(stoneChar, x, y);
+
+    if (isCorrect !== null) {
+        ctx.strokeStyle = isCorrect ? 'var(--success-color)' : 'var(--fail-color)';
+        ctx.lineWidth = 4;
+        ctx.beginPath();
+        ctx.arc(x, y, CELL_SIZE / 2 * 1.1, 0, 2 * Math.PI);
+        ctx.stroke();
+    }
+    if (moveNumber) {
+        ctx.fillStyle = color === 1 ? '#fff' : '#000';
+        ctx.font = `bold ${CELL_SIZE * 0.4}px Arial`;
+        ctx.fillText(String(moveNumber), x, y);
+    }
+    ctx.restore();
+}
+function redrawBoard(currentBoard, history) {
+    drawGrid();
+    history.forEach(([r, c], index) => {
+        const player = index % 2 === 0 ? 1 : -1;
+        drawStone(r, c, player, {moveNumber: index + 1});
+    });
+}
+function highlightMove(row, col, color = 'red') {
+    if (row === undefined || col === undefined) return;
+    const x = MARGIN + col * CELL_SIZE, y = MARGIN + row * CELL_SIZE;
+    ctx.strokeStyle = color; ctx.lineWidth = 3;
+    ctx.strokeRect(x - CELL_SIZE / 2, y - CELL_SIZE / 2, CELL_SIZE, CELL_SIZE);
+}
+
+function initWinRateChart() {
+    const chartCanvas = document.getElementById('win-rate-chart');
+    if (winRateChart) winRateChart.destroy();
+    winRateChart = new Chart(chartCanvas, {
+        type: 'line', data: { labels: [], datasets: [ { label: 'Black Win Rate', data: [], borderColor: 'black', tension: 0.1}, { label: 'White Win Rate', data: [], borderColor: 'grey', tension: 0.1 } ]},
+        options: { responsive: true, maintainAspectRatio: false, scales: { y: { min: 0, max: 100, ticks: { callback: v => v + '%' } } }, plugins: { legend: { display: false }, title: { display: true, text: 'AI Estimated Win Rate' } }}
+    });
+}
+function updateWinRateChart() {
+    if (!winRateChart) return;
+    winRateChart.data.labels = Array.from({ length: blackWinRateHistory.length }, (_, i) => i + 1);
+    winRateChart.data.datasets[0].data = blackWinRateHistory;
+    winRateChart.data.datasets[1].data = blackWinRateHistory.map(r => 100 - r);
+    winRateChart.update('none');
+}
+
+async function fetchAndPopulate(url, selector, minItems = 1) {
+    try {
+        const res = await fetch(url);
+        if (!res.ok) throw new Error(`Fetch failed with status ${res.status}`);
+        const items = await res.json();
+
+        // --- NEW LINE: Re-sort the items numerically by the 'iter' field ---
+        items.sort((a, b) => b.iter - a.iter);
+
+        selector.innerHTML = '';
+        if (items.length < minItems) {
+            selector.innerHTML = `<option disabled selected>Not enough items</option>`;
+            return false;
+        }
+        items.forEach(item => {
+            const opt = document.createElement('option');
+            opt.value = item.path;
+            // --- NEW, IMPROVED LINE ---
+            opt.textContent = `Step ${item.iter} (${item.name})`; 
+            selector.appendChild(opt);
+        });
+        return items;
+    } catch (e) {
+        console.error(`Failed to fetch from ${url}:`, e);
+        selector.innerHTML = `<option disabled selected>Error loading data</option>`;
+        return false;
+    }
+}
+async function loadReplay(filename) {
+    if (!filename) return;
+    try {
+        const res = await fetch(`/load_replay/${filename}`);
+        replayData = await res.json();
+        currentReplayStep = 0;
+        // [修改] 在这里添加 await
+        missedWinAnalysis = await analyzeMissedWins(replayData); 
+        updateReplayView();
+    } catch (e) { infoPanel.textContent = `Error loading ${filename}.`; }
+}
+function updateReplayView() {
+    if (!replayData || !replayData.GameRecord) return;
+    const totalMoves = replayData.GameRecord.actions.length;
+    board = Array(BOARD_SIZE).fill(0).map(() => Array(BOARD_SIZE).fill(0));
+    const movesToDraw = replayData.GameRecord.actions.slice(0, currentReplayStep);
+    drawGrid();
+    movesToDraw.forEach((action, index) => {
+        const r = Math.floor(action / BOARD_SIZE), c = action % BOARD_SIZE;
+        const player = index % 2 === 0 ? 1 : -1;
+        board[r][c] = player;
+        drawStone(r, c, player, {moveNumber: index + 1});
+    });
+
+    document.querySelectorAll('#replay-controls button').forEach(b => b.disabled = false);
+    if (currentReplayStep === 0) { document.getElementById('btn-first').disabled = document.getElementById('btn-prev').disabled = true; }
+    if (currentReplayStep >= totalMoves) { document.getElementById('btn-next').disabled = document.getElementById('btn-last').disabled = true; }
+    
+    const selectedOptionText = replaySelector.options[replaySelector.selectedIndex]?.text || "Replay";
+    let html = `<b>${selectedOptionText}</b>`;
+
+    if (missedWinAnalysis) {
+        html += `<hr style="border: 0; border-top: 1px solid #ddd; margin: 8px 0;">`;
+        const challengerEmoji = replayData.challenger_color === 'Black' ? '⚫' : '⚪';
+        html += `Challenger: ${challengerEmoji}<br>`;
+        const challengerStats = Object.keys(missedWinAnalysis.challenger).map(key => {
+            const count = missedWinAnalysis.challenger[key].filter(step => step <= currentReplayStep).length;
+            return count > 0 ? `<div class="stat-line">${key}: ${count}</div>` : '';
+        }).join('');
+        html += challengerStats || '<div class="stat-line">No misses</div>';
+
+        const defenderEmoji = replayData.defender_color === 'Black' ? '⚫' : '⚪';
+        html += `<br>Defender: ${defenderEmoji}<br>`;
+        const defenderStats = Object.keys(missedWinAnalysis.defender).map(key => {
+            const count = missedWinAnalysis.defender[key].filter(step => step <= currentReplayStep).length;
+            return count > 0 ? `<div class="stat-line">${key}: ${count}</div>` : '';
+        }).join('');
+        html += defenderStats || '<div class="stat-line">No misses</div>';
+    }
+
+    html += `<hr style="border: 0; border-top: 1px solid #ddd; margin: 8px 0;">`;
+
+    if (currentReplayStep > 0) { highlightMove(Math.floor(replayData.GameRecord.actions[currentReplayStep - 1] / BOARD_SIZE), replayData.GameRecord.actions[currentReplayStep - 1] % BOARD_SIZE); }
+    if (currentReplayStep === totalMoves) {
+        stopAutoPlay();
+        const winner = replayData.winner || "Unknown";
+        html += `Move ${currentReplayStep}/${totalMoves}. <b>Game Over. ${winner} Wins!</b>`;
+    } else {
+        html += `Move ${currentReplayStep}/${totalMoves}. Turn: ${(currentReplayStep % 2 === 0) ? '⚫' : '⚪'}`;
+    }
+    infoPanel.innerHTML = html;
+}
+function setReplayStep(step) {
+    if (!replayData || !replayData.GameRecord) return;
+    currentReplayStep = Math.max(0, Math.min(step, replayData.GameRecord.actions.length));
+    updateReplayView();
+    if (currentReplayStep >= replayData.GameRecord.actions.length) stopAutoPlay();
+}
+function toggleAutoPlay() { isAutoPlaying ? stopAutoPlay() : startAutoPlay(); }
+function startAutoPlay() {
+    if (isAutoPlaying) return;
+    isAutoPlaying = true; document.getElementById('btn-play-pause').textContent = '⏸️';
+    autoPlayInterval = setInterval(() => setReplayStep(currentReplayStep + 1), autoPlaySpeed);
+}
+function stopAutoPlay() {
+    if (!isAutoPlaying) return;
+    isAutoPlaying = false; document.getElementById('btn-play-pause').textContent = '▶️';
+    clearInterval(autoPlayInterval);
+}
+async function analyzeMissedWins(replayData) {
+    // 更新了分类以匹配后端更精确的逻辑 ('Combo' 替代了 'Double Three')
+    const analysis = { challenger: { 'Five': [], 'Open Four': [], 'Combo': [] }, defender: { 'Five': [], 'Open Four': [], 'Combo': [] }};
+    if (!replayData.GameRecord) return analysis;
+
+    let board = Array(BOARD_SIZE).fill(0).map(() => Array(BOARD_SIZE).fill(0));
+    
+    // 使用 for...of 循环来正确处理 await
+    let i = 0;
+    for (const action of replayData.GameRecord.actions) {
+        const player = i % 2 === 0 ? 1 : -1;
+        const actualMoveR = Math.floor(action / BOARD_SIZE);
+        const actualMoveC = action % BOARD_SIZE;
+
+        try {
+            // 这是核心改动：调用后端 API 进行分析
+            const res = await fetch('/api/analyze_move', {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify({ board: board, player: player }) // 发送当前棋盘状态和玩家
+            });
+
+            if (!res.ok) {
+                console.error(`Analysis failed for step ${i+1}: Server returned ${res.status}`);
+                continue; // 如果分析失败，则跳过这一步
+            }
+
+            const potentialWins = await res.json();
+            
+            // 将所有类型的获胜落子点合并到一个数组中
+            const allWinningMoves = [].concat(potentialWins.five || [], potentialWins.open_four || [], potentialWins.combo || []);
+            
+            if (allWinningMoves.length > 0) {
+                const madeWinningMove = allWinningMoves.some(move => move[0] === actualMoveR && move[1] === actualMoveC);
+                
+                if (!madeWinningMove) {
+                    const playerType = ((replayData.challenger_color === 'Black' && i % 2 === 0) || (replayData.challenger_color === 'White' && i % 2 !== 0)) ? 'challenger' : 'defender';
+                    
+                    // 根据后端的返回结果记录错过的机会
+                    if (potentialWins.five && potentialWins.five.length > 0) analysis[playerType]['Five'].push(i + 1);
+                    if (potentialWins.open_four && potentialWins.open_four.length > 0) analysis[playerType]['Open Four'].push(i + 1);
+                    if (potentialWins.combo && potentialWins.combo.length > 0) analysis[playerType]['Combo'].push(i + 1);
+                }
+            }
+        } catch (e) {
+            console.error(`Error during board analysis API call at step ${i+1}:`, e);
+        }
+
+        // 在分析完当前回合后，更新棋盘状态以备下一轮迭代使用
+        board[actualMoveR][actualMoveC] = player;
+        i++;
+    }
+    
+    return analysis;
+}
+
+function _resetCommon() {
+    board = Array(BOARD_SIZE).fill(0).map(() => Array(BOARD_SIZE).fill(0)); moveHistory = []; isGameOver = false; drawGrid();
+    blackWinRateHistory = []; document.getElementById('win-rate-chart-container').style.display = 'block'; initWinRateChart(); updateWinRateChart();
+}
+async function startGame(userPlaysAs) {
+    _resetCommon(); playerColor = userPlaysAs; isGameOver = false;
+    document.getElementById('play-setup-controls').style.display = 'none'; document.getElementById('btn-reset').style.display = 'block';
+    if (playerColor === 1) { isPlayerTurn = true; statusPanel.textContent = 'Your turn (⚫).'; blackWinRateHistory = [50.0]; updateWinRateChart(); }
+    else { isPlayerTurn = false; statusPanel.textContent = 'AI is thinking...'; await makeAIMove(); }
+}
+async function makeAIMove(last_human_move = null) {
+    const modelPath = document.getElementById('play-model-selector').value;
+    try {
+        // 准备要发送到后端的数据
+        const requestBody = {
+            board: board,
+            player_color: playerColor,
+            model_path: modelPath
+        };
+
+        // [修复] 如果这是在人类玩家落子后调用的，则附加上一步的坐标
+        if (last_human_move) {
+            requestBody.last_move = last_human_move; // last_human_move 会是 [r, c]
+        }
+
+        const res = await fetch('/api/move', {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify(requestBody)
+        });
+
+        if (!res.ok) throw new Error(`Server error: ${res.status}`);
+        const data = await res.json();
+
+        // 只有当游戏没有结束时，AI才会有移动
+        if (data.ai_move) {
+            const [r, c] = data.ai_move;
+            board[r][c] = playerColor * -1;
+            moveHistory.push([r, c]);
+        }
+
+        redrawBoard(board, moveHistory);
+        if (data.ai_move) {
+            highlightMove(data.ai_move[0], data.ai_move[1]);
+        }
+
+        blackWinRateHistory.push(data.black_win_rate);
+        updateWinRateChart();
+
+        if (data.game_over) {
+            isGameOver = true;
+            isPlayerTurn = false;
+            // 使用更明确的胜利者信息
+            let winnerMessage = "Draw!";
+            if (data.winner === playerColor) {
+                winnerMessage = "You Win!";
+            } else if (data.winner === (playerColor * -1)) {
+                winnerMessage = "AI Wins!";
+            }
+            statusPanel.textContent = `Game Over. ${winnerMessage}`;
+        } else {
+            isPlayerTurn = true;
+            statusPanel.textContent = `Your turn (${playerColor === 1 ? '⚫' : '⚪'}).`;
+        }
+    } catch (e) {
+        statusPanel.textContent = 'Error: could not get AI move.';
+        console.error("Error in makeAIMove:", e);
+    }
+}
+function startLiveGame() {
+    const blackSel = document.getElementById('live-black-model-selector'), whiteSel = document.getElementById('live-white-model-selector');
+    if (blackSel.value === whiteSel.value) { statusPanel.textContent = 'Models must be different.'; return; }
+    _resetCommon(); isLiveGameRunning = true; blackSel.disabled = true; whiteSel.disabled = true;
+    document.getElementById('btn-live-start-stop').textContent = 'Stop Battle';
+    runLiveTurn(1, blackSel.value, whiteSel.value);
+}
+function stopLiveGame(winner) {
+    isLiveGameRunning = false;
+    const blackSel = document.getElementById('live-black-model-selector'), whiteSel = document.getElementById('live-white-model-selector');
+    blackSel.disabled = false; whiteSel.disabled = false;
+    document.getElementById('btn-live-start-stop').textContent = 'Start Battle';
+    let msg = "Battle stopped.";
+    if (winner === 1) { msg = 'Game Over. Black Wins!'; }
+    else if (winner === -1) { msg = 'Game Over. White Wins!'; }
+    else if (winner === 0) { msg = "Game Over. It's a Draw!"; }
+    statusPanel.textContent = msg;
+}
+async function runLiveTurn(player, blackPath, whitePath) {
+    if (!isLiveGameRunning) return;
+    const modelPath = player === 1 ? blackPath : whitePath;
+    const modelName = player === 1 ? document.getElementById('live-black-model-selector').selectedOptions[0].text : document.getElementById('live-white-model-selector').selectedOptions[0].text;
+    statusPanel.innerHTML = `Turn ${moveHistory.length + 1}: ${player === 1 ? '⚫' : '⚪'} Thinking... <br>(${modelName})`;
+    try {
+        const res = await fetch('/api/live_move', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ board, current_player: player, model_path: modelPath }) });
+        if (!res.ok || !isLiveGameRunning) return;
+        const data = await res.json();
+        if (data.ai_move) { const [r, c] = data.ai_move; board[r][c] = player; moveHistory.push([r, c]); redrawBoard(board, moveHistory); highlightMove(r, c); }
+        blackWinRateHistory.push(data.black_win_rate); updateWinRateChart();
+        if (data.game_over) { stopLiveGame(data.winner); } else { setTimeout(() => runLiveTurn(player * -1, blackPath, whitePath), 500); }
+    } catch (e) { stopLiveGame(null); }
+}
+async function runMctsTest(puzzle) {
+    const modelPath = document.getElementById('test-model-selector').value;
+    if (!modelPath) { statusPanel.textContent = "Please select a model to test."; return; }
+    statusPanel.textContent = `Testing ${puzzle} with ${document.getElementById('test-model-selector').selectedOptions[0].text}...`;
+    try {
+        const res = await fetch('/api/mcts_test', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ puzzle, model_path: modelPath }) });
+        const data = await res.json();
+        drawGrid(); 
+        data.board.forEach((row, r) => row.forEach((p, c) => { if (p !== 0) drawStone(r, c, p); }));
+
+        // [修复] 循环遍历所有解决方案并进行绘制
+        if (data.solutions && Array.isArray(data.solutions)) {
+            data.solutions.forEach(([sol_r, sol_c]) => {
+                drawStone(sol_r, sol_c, data.player, {alpha: 0.5});
+                highlightMove(sol_r, sol_c, 'blue');
+            });
+        }
+
+        const [ai_r, ai_c] = data.ai_move;
+        drawStone(ai_r, ai_c, data.player, {isCorrect: data.is_correct});
+        
+        // [修复] 格式化解决方案列表以在状态文本中显示
+        let solutionsText = "(unknown)";
+        if (data.solutions && Array.isArray(data.solutions)) {
+            solutionsText = data.solutions.map(s => `(${s[0]}, ${s[1]})`).join(' or ');
+        }
+        const solutionWord = (data.solutions && data.solutions.length > 1) ? 'solutions are' : 'solution is';
+
+        statusPanel.textContent = `Test Result: ${data.is_correct ? 'PASS' : 'FAIL'}. AI chose (${ai_r}, ${ai_c}), ${solutionWord} ${solutionsText}.`;
+
+    } catch (e) { 
+        statusPanel.textContent = "Error running test."; 
+        console.error("Error running MCTS Test:", e);
+    }
+}
+
+async function switchMode(mode) {
+    currentMode = mode; stopAutoPlay(); if (isLiveGameRunning) stopLiveGame();
+    document.querySelectorAll('.mode-selector button').forEach(b => b.classList.remove('active'));
+    document.getElementById(`btn-${mode}-mode`).classList.add('active');
+    document.querySelectorAll('.control-group').forEach(el => el.style.display = 'none');
+    document.querySelectorAll('#info-panel, #status-panel').forEach(el => el.style.display = 'none');
+    document.querySelector('.mode-selector').style.display = 'block';
+    canvas.classList.remove('playable');
+    
+    if (mode === 'replay') {
+        document.getElementById('replay-controls').style.display = 'block';
+        document.getElementById('info-panel').style.display = 'flex';
+        document.getElementById('board-title').textContent = 'Replay Mode';
+        const replayFiles = await fetchAndPopulate('/get_replay_list', replaySelector);
+        if (replayFiles && replayFiles.length > 0) {
+            await loadReplay(replayFiles[0].path);
+        } else {
+            infoPanel.textContent = 'No replays found. Run training to generate games.';
+            drawGrid();
+        }
+    } else {
+        document.getElementById('main-controls').style.display = 'block';
+        document.getElementById('status-panel').style.display = 'flex';
+        document.getElementById('board-title').textContent = {'live': 'Live Battle', 'play': 'Play vs AI', 'test': 'MCTS Test'}[mode];
+        document.getElementById('main-controls-title').textContent = {'live': 'Live Controls', 'play': 'Play Controls', 'test': 'Test Controls'}[mode];
+        document.querySelectorAll('#main-controls > .setup-controls').forEach(el => el.style.display = 'none');
+        document.getElementById('win-rate-chart-container').style.display = 'none';
+        document.getElementById('btn-reset').style.display = 'none';
+        
+        if (mode === 'live' || mode === 'play') { document.getElementById('win-rate-chart-container').style.display = 'block'; }
+        if (mode === 'live') { document.getElementById('live-setup-controls').style.display = 'flex'; _resetCommon(); statusPanel.textContent = 'Select models to start.'; }
+        else if (mode === 'play') { document.getElementById('play-setup-controls').style.display = 'flex'; canvas.classList.add('playable'); _resetCommon(); statusPanel.textContent = 'Select your color.'; }
+        else if (mode === 'test') { document.getElementById('test-setup-controls').style.display = 'flex'; drawGrid(); statusPanel.textContent = 'Select a model and a puzzle to test.'; }
+    }
+}
+async function initializeApp() {
+    try {
+        const res = await fetch('/api/config');
+        if (!res.ok) throw new Error(`Server error: ${res.status}`);
+        const config = await res.json();
+        BOARD_SIZE = config.board_size; N_IN_ROW = config.n_in_row;
+    } catch (error) {
+        document.getElementById('connection-error-banner').textContent = 'Connection to Python backend failed. Make sure `webui.py` is running, then refresh.';
+        document.getElementById('connection-error-banner').style.display = 'block';
+        BOARD_SIZE = 15; N_IN_ROW = 5;
+    }
+    
+    CELL_SIZE = Math.floor(600 / (BOARD_SIZE + 1));
+    CANVAS_DIMENSION = CELL_SIZE * (BOARD_SIZE - 1) + MARGIN * 2;
+    boardSizer.style.width = CANVAS_DIMENSION + 'px'; boardSizer.style.height = CANVAS_DIMENSION + 'px';
+    canvas.width = CANVAS_DIMENSION; canvas.height = CANVAS_DIMENSION;
+    
+    document.getElementById('btn-replay-mode').addEventListener('click', () => switchMode('replay'));
+    document.getElementById('btn-live-mode').addEventListener('click', () => switchMode('live'));
+    document.getElementById('btn-play-mode').addEventListener('click', () => switchMode('play'));
+    document.getElementById('btn-test-mode').addEventListener('click', () => switchMode('test'));
+    replaySelector.addEventListener('change', (e) => loadReplay(e.target.value));
+    document.getElementById('btn-first').addEventListener('click', () => setReplayStep(0));
+    document.getElementById('btn-prev').addEventListener('click', () => setReplayStep(currentReplayStep - 1));
+    document.getElementById('btn-next').addEventListener('click', () => setReplayStep(currentReplayStep + 1));
+    document.getElementById('btn-last').addEventListener('click', () => setReplayStep(replayData ? replayData.GameRecord.actions.length : 0));
+    document.getElementById('btn-play-pause').addEventListener('click', toggleAutoPlay);
+    document.getElementById('speed-slider').addEventListener('input', e => {
+        autoPlaySpeed = 1600 - parseInt(e.target.value, 10);
+        if (isAutoPlaying) { stopAutoPlay(); startAutoPlay(); }
+    });
+    document.getElementById('btn-live-start-stop').addEventListener('click', () => isLiveGameRunning ? stopLiveGame() : startLiveGame());
+    document.getElementById('btn-play-black').addEventListener('click', () => startGame(1));
+    document.getElementById('btn-play-white').addEventListener('click', () => startGame(-1));
+    document.getElementById('btn-test-win').addEventListener('click', () => runMctsTest('win_in_one'));
+    document.getElementById('btn-test-block').addEventListener('click', () => runMctsTest('block_in_one'));
+    document.getElementById('btn-reset').addEventListener('click', () => switchMode(currentMode));
+    document.getElementById('btn-dynamics-test').addEventListener('click', runDynamicsTest);
+    
+    // ================= [NEW CODE] =================
+    function drawHeatmap(policy, validMoves) {
+        ctx.save(); // <-- [修复] 在函数开始时保存状态
+        const validMoveSet = new Set(validMoves.map(m => `${m[0]},${m[1]}`));
+        
+        let validProbs = [];
+        for (let r = 0; r < BOARD_SIZE; r++) {
+            for (let c = 0; c < BOARD_SIZE; c++) {
+                if (validMoveSet.has(`${r},${c}`)) {
+                    validProbs.push(policy[r * BOARD_SIZE + c]);
+                }
+            }
+        }
+        if (validProbs.length === 0) {
+            ctx.restore(); // <-- [修复] 确保在提前返回时也恢复状态
+            return;
+        }
+
+        const maxProb = Math.max(...validProbs);
+        if (maxProb === 0) {
+            ctx.restore(); // <-- [修复] 确保在提前返回时也恢复状态
+            return;
+        }
+
+        for (let r = 0; r < BOARD_SIZE; r++) {
+            for (let c = 0; c < BOARD_SIZE; c++) {
+                if (validMoveSet.has(`${r},${c}`)) {
+                    const prob = policy[r * BOARD_SIZE + c];
+                    const normalizedProb = prob / maxProb;
+
+                    if (prob > 0.0001) { 
+                        const x = MARGIN + c * CELL_SIZE;
+                        const y = MARGIN + r * CELL_SIZE;
+                        
+                        const red = 255;
+                        const green = Math.round(255 * (1 - normalizedProb));
+                        const blue = 0;
+                        const alpha = 0.2 + (normalizedProb * 0.7);
+
+                        ctx.fillStyle = `rgba(${red}, ${green}, ${blue}, ${alpha})`;
+                        ctx.beginPath();
+                        ctx.arc(x, y, CELL_SIZE * 0.45 * Math.sqrt(normalizedProb), 0, 2 * Math.PI);
+                        ctx.fill();
+                    }
+                }
+            }
+        }
+        ctx.restore(); // <-- [修复] 在函数结束时恢复状态
+    }
+
+    async function runPolicyTest(puzzle) {
+        const modelPath = document.getElementById('test-model-selector').value;
+        if (!modelPath) { statusPanel.textContent = "Please select a model to test."; return; }
+        statusPanel.textContent = `Visualizing raw policy for ${puzzle}...`;
+        try {
+            const res = await fetch('/api/policy_test', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ puzzle, model_path: modelPath }) });
+            if (!res.ok) { // Check for server-side errors
+                statusPanel.textContent = `Error: Server responded with status ${res.status}`;
+                return;
+            }
+            const data = await res.json();
+            drawGrid(); 
+            data.board.forEach((row, r) => row.forEach((p, c) => { if (p !== 0) drawStone(r, c, p); }));
+            drawHeatmap(data.policy_heatmap, data.valid_moves);
+            statusPanel.textContent = "Raw policy heatmap displayed. Red/Yellow circles represent probability on VALID moves.";
+        } catch (e) { 
+            console.error("Error in runPolicyTest:", e);
+            statusPanel.textContent = "Error running policy test. Check console for details."; 
+        }
+    }
+
+    async function runDynamicsTest() {
+        const modelPath = document.getElementById('test-model-selector').value;
+        if (!modelPath) {
+            statusPanel.textContent = "Please select a model to test.";
+            return;
+        }
+        statusPanel.textContent = `Running dynamics test with ${document.getElementById('test-model-selector').selectedOptions[0].text}...`;
+        isDynamicAnalysisMode = false; // 确保退出其他交互模式
+
+        try {
+            const res = await fetch('/api/dynamics_test', {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify({ model_path: modelPath })
+            });
+            if (!res.ok) {
+                const errData = await res.json();
+                throw new Error(errData.error || `Server error: ${res.status}`);
+            }
+            const data = await res.json();
+
+            // 1. 绘制最终的棋盘状态
+            drawGrid();
+            const moveHistory = [data.black_move, data.white_move];
+            board = Array(BOARD_SIZE).fill(0).map(() => Array(BOARD_SIZE).fill(0)); // 重置内部board
+            redrawBoard(board, moveHistory); // redrawBoard会根据历史记录填充棋盘
+
+            // 2. 高亮白棋的落子，因为我们看的是它之后的影响
+            highlightMove(data.white_move[0], data.white_move[1], 'blue');
+
+            // 3. 绘制模型“想象”出的策略热力图
+            // 这个热力图代表模型认为在白棋落子后，黑棋应该如何应对
+            drawHeatmap(data.policy_heatmap, data.valid_moves);
+
+            // 4. 更新状态信息
+            let valuePerspective = (data.predicted_value + 1) / 2 * 100; // 转换为黑棋胜率
+            statusPanel.innerHTML = `
+                <b>Dynamics Test Complete</b><br>
+                Black (1) at (${data.black_move.join(',')}), White (2) at (${data.white_move.join(',')}).<br>
+                Heatmap shows model's <em>imagined</em> policy for Black's next move.<br>
+                Model's imagined Black win rate: <b>${valuePerspective.toFixed(1)}%</b>.
+            `;
+
+        } catch (e) {
+            statusPanel.textContent = `Error during dynamics test: ${e.message}`;
+            console.error("Error in runDynamicsTest:", e);
+        }
+    }
+
+    document.getElementById('btn-policy-test').addEventListener('click', () => runPolicyTest('win_in_one'));
+    // ================= [END NEW CODE] =================
+
+    canvas.addEventListener('click', async (e) => {
+        if (currentMode !== 'play' || !isPlayerTurn || isGameOver) return;
+        const rect = canvas.getBoundingClientRect(); const x = e.clientX - rect.left, y = e.clientY - rect.top;
+        const c = Math.round((x - MARGIN) / CELL_SIZE), r = Math.round((y - MARGIN) / CELL_SIZE);
+        if (r < 0 || r >= BOARD_SIZE || c < 0 || c >= BOARD_SIZE || board[r][c] !== 0) return;
+        isPlayerTurn = false; board[r][c] = playerColor; moveHistory.push([r, c]);
+        redrawBoard(board, moveHistory); highlightMove(r,c);
+        blackWinRateHistory.push(blackWinRateHistory.slice(-1)[0] || 50.0); updateWinRateChart();
+        statusPanel.textContent = 'AI is thinking...';
+        await makeAIMove([r, c]);
+    });
+    
+    await fetchAndPopulate('/get_hof_list', document.getElementById('live-black-model-selector'), 2);
+    await fetchAndPopulate('/get_hof_list', document.getElementById('live-white-model-selector'), 2);
+    await fetchAndPopulate('/get_hof_list', document.getElementById('play-model-selector'));
+    await fetchAndPopulate('/get_hof_list', document.getElementById('test-model-selector'));
+    if (document.getElementById('live-white-model-selector').options.length > 1) {
+        document.getElementById('live-white-model-selector').selectedIndex = 1;
+    }
+    await switchMode('replay');
+}
+window.onload = initializeApp;
+</script>
+</body>
+</html>
