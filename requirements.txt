@@ -1,0 +1,19 @@
+# Core ML & Numerics
+torch
+numpy
+
+# Web UI Framework
+Flask
+
+# Console Progress Bars & Visualization
+tqdm
+matplotlib
+seaborn
+
+# 用于训练过程的可视化日志
+tensorboard
+
+# 注意：
+# 如果您希望在NVIDIA GPU上运行，请确保按照PyTorch官方网站的指导，
+# 安装与您的CUDA版本相匹配的torch版本。
+# 例如: pip install torch torchvision torchaudio --index-url https://download.pytorch.org/whl/cu121
