@@ -1,13 +1,11 @@
-# Datou-gomoku-muzero-
-Datou的五子棋-MuZero
+# Datou的五子棋-MuZero
 
 这是一个使用 Python 和 PyTorch 实现的、高度并行的五子棋（Gomoku）AI 训练项目。它借鉴了 DeepMind 的 AlphaZero 和 MuZero 论文中的核心思想，通过自我对弈（Self-Play）强化学习，从零开始训练一个强大的五子棋模型。
 
 项目内置了一个功能丰富的 Web UI，用于模型分析、人机对战和模型评估。
 
+<img width="1880" height="1310" alt="image" src="https://github.com/user-attachments/assets/ebffda2e-3c93-4a29-b403-a92daac4b70d" />
   
-*（建议：你可以在此替换为你的 WebUI 截图）*
-
 ## 核心特性
 
 *   **混合模型架构**: 实现了两种经典的 MCTS (蒙特卡洛树搜索) 模式，可在 `config.py` 中轻松切换：
@@ -30,6 +28,8 @@ Datou的五子棋-MuZero
 *   **浪涌式复盘 (Surge Re-analysis)**: (可选功能) 一个高级特性，当旧数据的质量远低于当前模型水平时，系统会自动切换所有 Worker 进程进入“复盘模式”，使用最新的模型重新分析旧棋局，从而提升数据质量。
 
 ## 性能指标特别说明
+
+<img width="3838" height="1886" alt="image" src="https://github.com/user-attachments/assets/6edd4c5f-6958-4757-b616-9d1ba24e7bb5" />
 
 在训练过程中，我们会监控一些指标，例如 **“错过获胜/必杀棋的概率”**。需要特别强调的是：
 
