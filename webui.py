@@ -12,7 +12,7 @@ import random
 from config import config
 from game import GomokuGame
 from network import GomokuNetEZ
-from mcts import GumbelEzV2MCTS
+from mcts import AlphaZeroMCTS, MuZeroMCTS
 from workers import find_winning_moves_rebuilt 
 
 # --- 全局变量和初始化 ---
@@ -142,7 +142,18 @@ class LocalInferenceEngine:
 
 def run_mcts_search(game, model):
     local_inference = LocalInferenceEngine(model)
-    mcts_engine = GumbelEzV2MCTS(0, local_inference, local_inference)
+    
+    if config.MCTS_IMPLEMENTATION == "AlphaZero":
+        mcts_engine = AlphaZeroMCTS(0, local_inference, local_inference)
+    elif config.MCTS_IMPLEMENTATION == "MuZero":
+        mcts_engine = MuZeroMCTS(0, local_inference, local_inference)
+    else:
+        # 在一个Web应用里因为一个配置错误就崩溃是愚蠢的，
+        # 所以我们提供一个回退选项，并打印一条愤怒的日志。
+        print(f"FATAL: Unknown MCTS implementation '{config.MCTS_IMPLEMENTATION}' in config.py. Falling back to AlphaZeroMCTS.")
+        mcts_engine = AlphaZeroMCTS(0, local_inference, local_inference)
+    # --- [切换逻辑结束] ---
+
     policy, value, action = mcts_engine.search(game)
     return policy, value, action
 
