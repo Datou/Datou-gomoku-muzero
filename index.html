@@ -138,12 +138,17 @@ function initWinRateChart() {
 }
 function updateWinRateChart() {
     if (!winRateChart) return;
-    winRateChart.data.labels = Array.from({ length: blackWinRateHistory.length }, (_, i) => i + 1);
+
+    // [Linus式修正] 
+    // 无论在哪种模式下，X轴标签都应该反映数据点的数量，从0开始。
+    // 0代表初始状态，1代表第一次评估，以此类推。
+    // 这简单、诚实，而且在所有模式下都有效。
+    winRateChart.data.labels = Array.from({ length: blackWinRateHistory.length }, (_, i) => i);
+    
     winRateChart.data.datasets[0].data = blackWinRateHistory;
     winRateChart.data.datasets[1].data = blackWinRateHistory.map(r => 100 - r);
     winRateChart.update('none');
 }
-
 async function fetchAndPopulate(url, selector, minItems = 1) {
     try {
         const res = await fetch(url);
@@ -648,7 +653,9 @@ async function initializeApp() {
         if (r < 0 || r >= BOARD_SIZE || c < 0 || c >= BOARD_SIZE || board[r][c] !== 0) return;
         isPlayerTurn = false; board[r][c] = playerColor; moveHistory.push([r, c]);
         redrawBoard(board, moveHistory); highlightMove(r,c);
-        blackWinRateHistory.push(blackWinRateHistory.slice(-1)[0] || 50.0); updateWinRateChart();
+
+        // 把那两行垃圾代码删掉。图表数据只应该在AI给出评估后才更新。
+        
         statusPanel.textContent = 'AI is thinking...';
         await makeAIMove([r, c]);
     });
