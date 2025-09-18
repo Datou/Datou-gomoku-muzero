@@ -119,13 +119,22 @@ class GumbelMCTSBase(MCTS):
     def _backpropagate(self, leaves: list[Node], values: list[float], min_max_stats):
         for i, leaf in enumerate(leaves):
             value, node = values[i], leaf
+            # [Linus式修正] 确保初始的 leaf value 就在 [-1, 1] 范围内
+            value = np.clip(value, -1.0, 1.0)
+
             while node is not None:
                 node.value_sum += value
                 node.visit_count += 1
                 if not node.is_root():
                     q_value = node.parent.get_qsa(node.action, config.DISCOUNT)
                     min_max_stats.update(q_value)
+                
+                # [Linus式修正] 
+                # 在更新 value 给父节点之前，再次进行限制。
+                # 这确保了无论 reward 是多少，累加的值都不会无限增长。
                 value = node.reward + config.DISCOUNT * value
+                value = np.clip(value, -1.0, 1.0)
+
                 node = node.parent
 
     # --- Gumbel-specific Helpers ---
